@@ -8,10 +8,12 @@ struct SyncUpForm {
     struct State: Equatable, Sendable {
         var focus: Field? = .title
         var syncUp: SyncUp
+        var attendeeFormIsPresented:  Bool
         
-        init(focus: Field? = .title, syncUp: SyncUp) {
+        init(focus: Field? = .title, syncUp: SyncUp, attendeeFormIsPresented: Bool = false) {
             self.focus = focus
             self.syncUp = syncUp
+            self.attendeeFormIsPresented = attendeeFormIsPresented
             if self.syncUp.attendees.isEmpty {
                 @Dependency(\.uuid) var uuid
                 self.syncUp.attendees.append(Attendee(id: Attendee.ID(uuid())))
@@ -19,13 +21,14 @@ struct SyncUpForm {
         }
         
         enum Field: Hashable {
-            case attendee(Attendee.ID)
             case title
         }
     }
     
     enum Action: BindableAction, Equatable, Sendable {
         case addAttendeeButtonTapped
+        case attendeeCreated(Attendee)
+        case attendeeFormDismissed
         case binding(BindingAction<State>)
         case deleteAttendees(atOffsets: IndexSet)
     }
@@ -38,8 +41,15 @@ struct SyncUpForm {
             switch action {
             case .addAttendeeButtonTapped:
                 let attendee = Attendee(id: Attendee.ID(uuid()))
+                state.attendeeFormIsPresented = true
+                return .none
+                
+            case .attendeeCreated(let attendee):
                 state.syncUp.attendees.append(attendee)
-                state.focus = .attendee(attendee.id)
+                return .none
+                
+            case .attendeeFormDismissed:
+                state.attendeeFormIsPresented = false
                 return .none
                 
             case .binding:
@@ -53,7 +63,6 @@ struct SyncUpForm {
                 guard let firstIndex = indices.first
                 else { return .none }
                 let index = min(firstIndex, state.syncUp.attendees.count - 1)
-                state.focus = .attendee(state.syncUp.attendees[index].id)
                 return .none
             }
         }
@@ -81,9 +90,8 @@ struct SyncUpFormView: View {
                 Text("Sync-up Info")
             }
             Section {
-                ForEach($store.syncUp.attendees) { $attendee in
-                    TextField("Name", text: $attendee.name)
-                        .focused($focus, equals: .attendee(attendee.id))
+                ForEach(store.syncUp.attendees) { attendee in
+                    Text(attendee.name)
                 }
                 .onDelete { indices in
                     store.send(.deleteAttendees(atOffsets: indices))
@@ -96,6 +104,17 @@ struct SyncUpFormView: View {
                 Text("Attendees")
             }
         }
+        .sheet(
+            isPresented: $store.attendeeFormIsPresented,
+            onDismiss: {
+                store.send(.attendeeFormDismissed)
+            },
+            content: {
+                AttendeeForm { attendee in
+                    store.send(.attendeeCreated(attendee))
+                }
+            }
+        )
         .bind($store.focus, to: $focus)
     }
 }
